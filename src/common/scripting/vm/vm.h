@@ -665,6 +665,18 @@ struct AFuncDesc
 #define GCC_FSEG __attribute__((section(SECTION_FREG))) __attribute__((used))
 #endif
 
+#if defined(__EMSCRIPTEN__)
+#define AUTOSEG_REGISTER_AREG(symbol) \
+	namespace { struct AutoSegAReg_##symbol { AutoSegAReg_##symbol() { AutoSegs::RegisterActionFunction((void*)symbol); } }; \
+	static AutoSegAReg_##symbol AutoSegARegInst_##symbol; }
+#define AUTOSEG_REGISTER_FREG(symbol) \
+	namespace { struct AutoSegFReg_##symbol { AutoSegFReg_##symbol() { AutoSegs::RegisterClassField((void*)symbol); } }; \
+	static AutoSegFReg_##symbol AutoSegFRegInst_##symbol; }
+#else
+#define AUTOSEG_REGISTER_AREG(symbol)
+#define AUTOSEG_REGISTER_FREG(symbol)
+#endif
+
 // Macros to handle action functions. These are here so that I don't have to
 // change every single use in case the parameters change.
 
@@ -674,6 +686,7 @@ struct AFuncDesc
 	static const AFuncDesc cls##_##name##_Hook = { #cls, #name, AF_##cls##_##name, &cls##_##name##_VMPtr, native }; \
 	extern AFuncDesc const *const cls##_##name##_HookPtr; \
 	MSVC_ASEG AFuncDesc const *const cls##_##name##_HookPtr GCC_ASEG = &cls##_##name##_Hook; \
+	AUTOSEG_REGISTER_AREG(cls##_##name##_HookPtr) \
 	static int AF_##cls##_##name(VM_ARGS)
 
 #define DEFINE_ACTION_FUNCTION_NATIVE0(cls, name, native) \
@@ -682,6 +695,7 @@ struct AFuncDesc
 	static const AFuncDesc cls##_##name##_Hook = { #cls, #name, AF_##cls##_##name, &cls##_##name##_VMPtr }; \
 	extern AFuncDesc const *const cls##_##name##_HookPtr; \
 	MSVC_ASEG AFuncDesc const *const cls##_##name##_HookPtr GCC_ASEG = &cls##_##name##_Hook; \
+	AUTOSEG_REGISTER_AREG(cls##_##name##_HookPtr) \
 	static int AF_##cls##_##name(VM_ARGS)
 
 #define DEFINE_ACTION_FUNCTION(cls, name) \
@@ -690,64 +704,76 @@ struct AFuncDesc
 	static const AFuncDesc cls##_##name##_Hook = { #cls, #name, AF_##cls##_##name, &cls##_##name##_VMPtr }; \
 	extern AFuncDesc const *const cls##_##name##_HookPtr; \
 	MSVC_ASEG AFuncDesc const *const cls##_##name##_HookPtr GCC_ASEG = &cls##_##name##_Hook; \
+	AUTOSEG_REGISTER_AREG(cls##_##name##_HookPtr) \
 	static int AF_##cls##_##name(VM_ARGS)
 
 // cls is the scripted class name, icls the internal one (e.g. player_t vs. Player)
 #define DEFINE_FIELD_X(cls, icls, name) \
 	static const FieldDesc VMField_##icls##_##name = { "A" #cls, #name, (unsigned)myoffsetof(icls, name), (unsigned)sizeof(icls::name), 0 }; \
 	extern FieldDesc const *const VMField_##icls##_##name##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##icls##_##name##_HookPtr GCC_FSEG = &VMField_##icls##_##name;
+	MSVC_FSEG FieldDesc const *const VMField_##icls##_##name##_HookPtr GCC_FSEG = &VMField_##icls##_##name; \
+	AUTOSEG_REGISTER_FREG(VMField_##icls##_##name##_HookPtr)
 
 // This is for cases where the internal size does not match the part that gets exported.
 #define DEFINE_FIELD_UNSIZED(cls, icls, name) \
 	static const FieldDesc VMField_##icls##_##name = { "A" #cls, #name, (unsigned)myoffsetof(icls, name), ~0u, 0 }; \
 	extern FieldDesc const *const VMField_##icls##_##name##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##icls##_##name##_HookPtr GCC_FSEG = &VMField_##icls##_##name;
+	MSVC_FSEG FieldDesc const *const VMField_##icls##_##name##_HookPtr GCC_FSEG = &VMField_##icls##_##name; \
+	AUTOSEG_REGISTER_FREG(VMField_##icls##_##name##_HookPtr)
 
 #define DEFINE_FIELD_NAMED_X(cls, icls, name, scriptname) \
 	static const FieldDesc VMField_##cls##_##scriptname = { "A" #cls, #scriptname, (unsigned)myoffsetof(icls, name), (unsigned)sizeof(icls::name), 0 }; \
 	extern FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname;
+	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname; \
+	AUTOSEG_REGISTER_FREG(VMField_##cls##_##scriptname##_HookPtr)
 
 #define DEFINE_FIELD_X_BIT(cls, icls, name, bitval) \
 	static const FieldDesc VMField_##icls##_##name = { "A" #cls, #name, (unsigned)myoffsetof(icls, name), (unsigned)sizeof(icls::name), bitval }; \
 	extern FieldDesc const *const VMField_##icls##_##name##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##icls##_##name##_HookPtr GCC_FSEG = &VMField_##cls##_##name;
+	MSVC_FSEG FieldDesc const *const VMField_##icls##_##name##_HookPtr GCC_FSEG = &VMField_##cls##_##name; \
+	AUTOSEG_REGISTER_FREG(VMField_##icls##_##name##_HookPtr)
 
 #define DEFINE_FIELD(cls, name) \
 	static const FieldDesc VMField_##cls##_##name = { #cls, #name, (unsigned)myoffsetof(cls, name), (unsigned)sizeof(cls::name), 0 }; \
 	extern FieldDesc const *const VMField_##cls##_##name##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##cls##_##name##_HookPtr GCC_FSEG = &VMField_##cls##_##name;
+	MSVC_FSEG FieldDesc const *const VMField_##cls##_##name##_HookPtr GCC_FSEG = &VMField_##cls##_##name; \
+	AUTOSEG_REGISTER_FREG(VMField_##cls##_##name##_HookPtr)
 
 #define DEFINE_FIELD_NAMED(cls, name, scriptname) \
 		static const FieldDesc VMField_##cls##_##scriptname = { #cls, #scriptname, (unsigned)myoffsetof(cls, name), (unsigned)sizeof(cls::name), 0 }; \
 	extern FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname;
+	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname; \
+	AUTOSEG_REGISTER_FREG(VMField_##cls##_##scriptname##_HookPtr)
 
 #define DEFINE_FIELD_NAMED_UNSIZED(cls, name, scriptname) \
 		static const FieldDesc VMField_##cls##_##scriptname = { #cls, #scriptname, (unsigned)myoffsetof(cls, name), ~0u, 0 }; \
 	extern FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname;
+	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname; \
+	AUTOSEG_REGISTER_FREG(VMField_##cls##_##scriptname##_HookPtr)
 
 #define DEFINE_FIELD_BIT(cls, name, scriptname, bitval) \
 		static const FieldDesc VMField_##cls##_##scriptname = { #cls, #scriptname, (unsigned)myoffsetof(cls, name), (unsigned)sizeof(cls::name), bitval }; \
 	extern FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname;
+	MSVC_FSEG FieldDesc const *const VMField_##cls##_##scriptname##_HookPtr GCC_FSEG = &VMField_##cls##_##scriptname; \
+	AUTOSEG_REGISTER_FREG(VMField_##cls##_##scriptname##_HookPtr)
 
 #define DEFINE_GLOBAL(name) \
 	static const FieldDesc VMGlobal_##name = { "", #name, (size_t)&name, (unsigned)sizeof(name), 0 }; \
 	extern FieldDesc const *const VMGlobal_##name##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMGlobal_##name##_HookPtr GCC_FSEG = &VMGlobal_##name;
+	MSVC_FSEG FieldDesc const *const VMGlobal_##name##_HookPtr GCC_FSEG = &VMGlobal_##name; \
+	AUTOSEG_REGISTER_FREG(VMGlobal_##name##_HookPtr)
 
 #define DEFINE_GLOBAL_NAMED(iname, name) \
 	static const FieldDesc VMGlobal_##name = { "", #name, (size_t)&iname, (unsigned)sizeof(iname), 0 }; \
 	extern FieldDesc const *const VMGlobal_##name##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMGlobal_##name##_HookPtr GCC_FSEG = &VMGlobal_##name;
+	MSVC_FSEG FieldDesc const *const VMGlobal_##name##_HookPtr GCC_FSEG = &VMGlobal_##name; \
+	AUTOSEG_REGISTER_FREG(VMGlobal_##name##_HookPtr)
 
 #define DEFINE_GLOBAL_UNSIZED(name) \
 	static const FieldDesc VMGlobal_##name = { "", #name, (size_t)&name, ~0u, 0 }; \
 	extern FieldDesc const *const VMGlobal_##name##_HookPtr; \
-	MSVC_FSEG FieldDesc const *const VMGlobal_##name##_HookPtr GCC_FSEG = &VMGlobal_##name;
+	MSVC_FSEG FieldDesc const *const VMGlobal_##name##_HookPtr GCC_FSEG = &VMGlobal_##name; \
+	AUTOSEG_REGISTER_FREG(VMGlobal_##name##_HookPtr)
 
 
 

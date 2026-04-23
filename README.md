@@ -16,9 +16,13 @@ Special thanks to Coraline of the EDGE team for allowing us to use her [README.m
 ##### https://www.gnu.org/licenses/quick-guide-gplv3.en.html
 ---
 
-## How to build GZDoom
+## How to build GZDoom for Emscripten
 
-To build GZDoom, please see the [wiki](https://zdoom.org/wiki/) and see the "Programmer's Corner" on the bottom-right corner of the page to build for your platform.
+Clone https://github.com/thedirptastic/ZMusic-emscripten to the same directory as this repo (not inside the repo) and build it
+
+Run ./build-emscripten.sh
+
+Currently the hud, audio, and some textures are broken but hey at least it works
 
 # Resources
 - https://zdoom.org/ - Home Page

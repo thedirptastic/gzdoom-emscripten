@@ -50,14 +50,22 @@
 #include <immintrin.h>
 #endif // ARCH_IA32
 
+#if defined(__EMSCRIPTEN__)
+CVAR(Bool, gl_multithread, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+#else
 CVAR(Bool, gl_multithread, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+#endif
 
 EXTERN_CVAR(Float, r_actorspriteshadowdist)
 EXTERN_CVAR(Bool, r_radarclipper)
 EXTERN_CVAR(Bool, r_dithertransparency)
 
 thread_local bool isWorkerThread;
+#if defined(__EMSCRIPTEN__)
+ctpl::thread_pool renderPool(0);
+#else
 ctpl::thread_pool renderPool(1);
+#endif
 bool inited = false;
 
 const int MAXDITHERACTORS = 20; // Maximum number of enemies that can set dither-transparency flags
@@ -1026,6 +1034,9 @@ void HWDrawInfo::RenderBSP(void *node, bool drawpsprites)
 	validcount++;	// used for processing sidedefs only once by the renderer.
 
 	multithread = gl_multithread;
+#if defined(__EMSCRIPTEN__)
+	multithread = false;
+#endif
 	if (multithread)
 	{
 		jobQueue.ReleaseAll();

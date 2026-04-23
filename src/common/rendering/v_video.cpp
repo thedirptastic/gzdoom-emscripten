@@ -93,7 +93,13 @@ CUSTOM_CVAR(Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	}
 }
 
-CUSTOM_CVAR(Int, vid_preferbackend, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
+#if defined(__EMSCRIPTEN__) && defined(HAVE_GLES2)
+#define VID_PREFERBACKEND_DEFAULT 2
+#else
+#define VID_PREFERBACKEND_DEFAULT 1
+#endif
+
+CUSTOM_CVAR(Int, vid_preferbackend, VID_PREFERBACKEND_DEFAULT, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	// [SP] This may seem pointless - but I don't want to implement live switching just
 	// yet - I'm pretty sure it's going to require a lot of reinits and destructions to
@@ -124,6 +130,9 @@ CUSTOM_CVAR(Int, vid_preferbackend, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_N
 int V_GetBackend()
 {
 	int v = vid_preferbackend;
+#if defined(__EMSCRIPTEN__) && defined(HAVE_GLES2)
+	if (v != 2) vid_preferbackend = v = 2;
+#endif
 	if (v == 3) vid_preferbackend = v = 2;
 	else if (v < 0 || v > 3) v = 0;
 	return v;
@@ -445,7 +454,13 @@ void IVideo::DumpAdapters ()
 	Printf("Multi-monitor support unavailable.\n");
 }
 
-CUSTOM_CVAR(Bool, vid_fullscreen, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
+#if defined(__EMSCRIPTEN__)
+#define VID_FULLSCREEN_DEFAULT false
+#else
+#define VID_FULLSCREEN_DEFAULT true
+#endif
+
+CUSTOM_CVAR(Bool, vid_fullscreen, VID_FULLSCREEN_DEFAULT, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	setmodeneeded = true;
 }
@@ -506,4 +521,3 @@ CUSTOM_CVAR(Float, transsouls, 0.75f, CVAR_ARCHIVE)
 		self = 1.f;
 	}
 }
-

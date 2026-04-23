@@ -42,8 +42,10 @@
 #include "gamestate.h"
 #include "SmackerDecoder.h"
 #include "playmve.h"
+#ifdef USE_LIBVPX
 #include <vpx/vpx_decoder.h>
 #include <vpx/vp8dx.h>
+#endif
 #include "filesystem.h"
 #include "vm.h"
 #include "printf.h"
@@ -309,6 +311,7 @@ public:
 //
 //---------------------------------------------------------------------------
 
+#ifdef USE_LIBVPX
 class VpxPlayer : public MoviePlayer
 {
 	bool failed = false;
@@ -632,6 +635,7 @@ public:
 		return animtex.GetFrameID();
 	}
 };
+#endif // USE_LIBVPX
 
 //---------------------------------------------------------------------------
 //
@@ -905,6 +909,7 @@ MoviePlayer* OpenMovie(const char* filename, TArray<int>& ans, const int* framet
 	}
 	else if (!memcmp(id, "DKIF\0\0 \0VP80", 12) || !memcmp(id, "DKIF\0\0 \0VP90", 12))
 	{
+#ifdef USE_LIBVPX
 		auto anm = new VpxPlayer(fr, ans, frameticks ? frameticks[1] : 0, flags, error);
 		if (!anm->isvalid())
 		{
@@ -916,6 +921,10 @@ MoviePlayer* OpenMovie(const char* filename, TArray<int>& ans, const int* framet
 		FString name = StripExtension(filename);
 		anm->soundtrack = fileSystem.FindFileWithExtensions(name.GetChars(), knownSoundExts, countof(knownSoundExts));
 		return anm;
+#else
+		error.Format("%s: VPX playback support not available in this build.\n", filename);
+		return nullptr;
+#endif
 	}
 	// add more formats here.
 	else

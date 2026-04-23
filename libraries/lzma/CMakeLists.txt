@@ -4,7 +4,7 @@ set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DZ7_PPMD_SUPPORT" )
 
 find_package(Threads)
 
-add_library( lzma STATIC
+set(LZMA_SOURCES
 	C/7zAlloc.c
 	C/7zArcIn.c
 	C/7zBuf.c
@@ -48,4 +48,21 @@ add_library( lzma STATIC
 	C/XzEnc.c
 	C/XzIn.c
 )
-target_link_libraries( lzma Threads::Threads )
+
+if( EMSCRIPTEN OR NOT Threads_FOUND )
+	list(REMOVE_ITEM LZMA_SOURCES
+		C/LzFindMt.c
+		C/Lzma2DecMt.c
+		C/MtCoder.c
+		C/MtDec.c
+		C/Threads.c
+	)
+endif()
+
+add_library( lzma STATIC ${LZMA_SOURCES} )
+if( EMSCRIPTEN OR NOT Threads_FOUND )
+	target_compile_definitions( lzma PRIVATE Z7_ST )
+endif()
+if( Threads_FOUND )
+	target_link_libraries( lzma Threads::Threads )
+endif()

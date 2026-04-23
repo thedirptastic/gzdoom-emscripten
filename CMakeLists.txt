@@ -31,6 +31,29 @@ endif()
 
 project(GZDoom)
 
+if( EMSCRIPTEN )
+	option(EMSCRIPTEN_PTHREADS "Enable pthread support for Emscripten builds." OFF)
+	if(EMSCRIPTEN_PTHREADS)
+		add_compile_options("-pthread")
+		add_link_options(
+			"-pthread"
+			"SHELL:-sPTHREAD_POOL_SIZE=4"
+		)
+	endif()
+	set(EMSCRIPTEN_INITIAL_MEMORY "268435456" CACHE STRING "Initial WebAssembly memory in bytes.")
+	add_compile_options("SHELL:-sUSE_SDL=2")
+	add_link_options(
+		"SHELL:-sUSE_SDL=2"
+		"SHELL:-sINITIAL_MEMORY=${EMSCRIPTEN_INITIAL_MEMORY}"
+		"SHELL:-sALLOW_MEMORY_GROWTH=1"
+		"SHELL:-sABORTING_MALLOC=0"
+		"SHELL:-sEXIT_RUNTIME=0"
+		"SHELL:-sMIN_WEBGL_VERSION=2"
+		"SHELL:-sMAX_WEBGL_VERSION=2"
+		"SHELL:-sFULL_ES3=1"
+	)
+endif()
+
 if (WIN32 AND VCPKG_TOOLCHAIN)
 	option(LIBVPX_VCPKG "Use libvpx from vcpkg" OFF)
 endif()
@@ -58,8 +81,12 @@ if( FORCE_CROSSCOMPILE )
 endif()
 
 if(CMAKE_CROSSCOMPILING)
-	set(IMPORT_EXECUTABLES "IMPORTFILE-NOTFOUND" CACHE FILEPATH "Export file from native build.")
-	include(${IMPORT_EXECUTABLES})
+	set(IMPORT_EXECUTABLES "${CMAKE_SOURCE_DIR}/build-host-tools/ImportExecutables.cmake" CACHE FILEPATH "Export file from native build.")
+	if(EXISTS "${IMPORT_EXECUTABLES}")
+		include("${IMPORT_EXECUTABLES}")
+	else()
+		message(FATAL_ERROR "Cross-compiling requires host tools (lemon/re2c/zipdir). Configure a native build first to generate ${IMPORT_EXECUTABLES}.")
+	endif()
 endif()
 
 # Recursive function to place PK3 archive source files into a hierarchy of source file in the IDE
@@ -287,16 +314,18 @@ else()
 
 	if ( UNIX )
 		include(CheckSymbolExists)
-		check_symbol_exists( "fts_set" "sys/types.h;sys/stat.h;fts.h" HAVE_FTS )
-		if ( NOT HAVE_FTS )
-			include ( FindPkgConfig )
-			pkg_check_modules( MUSL_FTS musl-fts )
-			if ( MUSL_FTS_FOUND )
-				set ( ALL_C_FLAGS "${ALL_C_FLAGS} ${MUSL_FTS_LDFLAGS}" )
-			else ( MUSL_FTS_FOUND )
-				message (ERROR "fts_* functions not found in the system" )
-			endif ( MUSL_FTS_FOUND )
-		endif ( NOT HAVE_FTS )
+		if ( NOT EMSCRIPTEN )
+			check_symbol_exists( "fts_set" "sys/types.h;sys/stat.h;fts.h" HAVE_FTS )
+			if ( NOT HAVE_FTS )
+				include ( FindPkgConfig )
+				pkg_check_modules( MUSL_FTS musl-fts )
+				if ( MUSL_FTS_FOUND )
+					set ( ALL_C_FLAGS "${ALL_C_FLAGS} ${MUSL_FTS_LDFLAGS}" )
+				else ( MUSL_FTS_FOUND )
+					message (ERROR "fts_* functions not found in the system" )
+				endif ( MUSL_FTS_FOUND )
+			endif ( NOT HAVE_FTS )
+		endif()
 	endif ( UNIX )
 
 	set( REL_C_FLAGS "" )
@@ -309,7 +338,7 @@ else()
 			# If we're compiling with a custom GCC on the Mac (which we know since g++-4.2 doesn't support C++11) statically link libgcc.
 			set( ALL_C_FLAGS "-static-libgcc" )
 		endif()
-	elseif( NOT MINGW AND NOT HAIKU )
+	elseif( NOT MINGW AND NOT HAIKU AND NOT EMSCRIPTEN )
 		# Generic GCC/Clang requires position independent executable to be enabled explicitly
 		set( ALL_C_FLAGS "${ALL_C_FLAGS} -fPIE" )
 		set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie" )
@@ -404,16 +433,23 @@ install(DIRECTORY docs/
 		COMPONENT "Documentation")
 
 option( DYN_OPENAL "Dynamically load OpenAL" ON )
+option( GZDOOM_HOST_TOOLS_ONLY "Build only host-side helper tools (lemon/re2c/zipdir)." OFF )
 
-add_subdirectory( libraries/lzma )
-add_subdirectory( libraries/miniz )
-add_subdirectory( tools )
-add_subdirectory( wadsrc )
-add_subdirectory( wadsrc_bm )
-add_subdirectory( wadsrc_lights )
-add_subdirectory( wadsrc_extra )
-add_subdirectory( wadsrc_widepix )
-add_subdirectory( src )
+if( GZDOOM_HOST_TOOLS_ONLY )
+	add_subdirectory( libraries/lzma )
+	add_subdirectory( libraries/miniz )
+	add_subdirectory( tools )
+else()
+	add_subdirectory( libraries/lzma )
+	add_subdirectory( libraries/miniz )
+	add_subdirectory( tools )
+	add_subdirectory( wadsrc )
+	add_subdirectory( wadsrc_bm )
+	add_subdirectory( wadsrc_lights )
+	add_subdirectory( wadsrc_extra )
+	add_subdirectory( wadsrc_widepix )
+	add_subdirectory( src )
+endif()
 
 if( NOT CMAKE_CROSSCOMPILING )
 	export(TARGETS ${CROSS_EXPORTS} FILE "${CMAKE_BINARY_DIR}/ImportExecutables.cmake" )

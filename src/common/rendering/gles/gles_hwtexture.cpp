@@ -37,6 +37,8 @@
 
 #include "c_cvars.h"
 #include "hw_material.h"
+#include <cstring>
+#include <utility>
 
 #include "hw_cvars.h"
 #include "gles_renderer.h"
@@ -80,6 +82,8 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int 
 	int rh,rw;
 	int texformat = GL_RGBA;// TexFormat[gl_texture_format];
 	bool deletebuffer=false;
+	unsigned char* convertedbuffer = nullptr;
+	unsigned char* uploadbuffer = nullptr;
 
 	// When running in SW mode buffer will be null, so set it to the texBuffer already created
 	// There could be other use cases I do not know about which means this is a bad idea..
@@ -140,8 +144,14 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int 
 		}
 		else
 		{
+#if defined(__EMSCRIPTEN__)
+			// WebGL2 does not accept GL_BGRA as an internal format.
+			sourcetype = GL_RGBA;
+			texformat = GL_RGBA;
+#else
 			sourcetype = GL_BGRA; // These two must be the same
 			texformat = GL_BGRA;
+#endif
 		}
 	}
 	else
@@ -154,12 +164,37 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int 
 		}
 		else
 		{
+#if defined(__EMSCRIPTEN__)
+			sourcetype = GL_RGBA;
+			texformat = GL_RGBA;
+#else
 			sourcetype = GL_BGRA;
 			texformat = GL_RGBA;
+#endif
 		}
 	}
 
-	glTexImage2D(GL_TEXTURE_2D, 0, texformat, rw, rh, 0, sourcetype, GL_UNSIGNED_BYTE, buffer);
+	uploadbuffer = buffer;
+#if defined(__EMSCRIPTEN__)
+	if (glTextureBytes != 1 && buffer != nullptr && sourcetype == GL_RGBA)
+	{
+		size_t pixelCount = size_t(rw) * size_t(rh);
+		size_t byteCount = pixelCount * 4;
+		convertedbuffer = (unsigned char*)malloc(byteCount);
+		if (convertedbuffer != nullptr)
+		{
+			std::memcpy(convertedbuffer, buffer, byteCount);
+			uploadbuffer = convertedbuffer;
+		}
+		for (size_t p = 0; p < pixelCount; ++p)
+		{
+			auto* px = uploadbuffer + (p * 4);
+			std::swap(px[0], px[2]); // BGRA -> RGBA
+		}
+	}
+#endif
+
+	glTexImage2D(GL_TEXTURE_2D, 0, texformat, rw, rh, 0, sourcetype, GL_UNSIGNED_BYTE, uploadbuffer);
 
 	if (gles.glesMode != GLES_MODE_GLES)
 	{
@@ -173,6 +208,7 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int 
 	}
 
 	if (deletebuffer && buffer) free(buffer);
+	if (convertedbuffer) free(convertedbuffer);
 
 	if (mipmap && TexFilter[gl_texture_filter].mipmapping)
 	{

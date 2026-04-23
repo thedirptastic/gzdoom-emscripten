@@ -1,5 +1,3 @@
-
-
 #include "gles_system.h"
 #include "tarray.h"
 #include "v_video.h"
@@ -160,8 +158,23 @@ namespace OpenGLESRenderer
 		{
 			Printf(PRINT_LOG, " %s\n", m_Extensions[i].GetChars());
 		}
+		
 		const char* glVersionStr = (const char*)glGetString(GL_VERSION);
-		double glVersion = strtod(glVersionStr, NULL);
+		
+		// Fix the string parsing by skipping the "OpenGL ES " or "WebGL " prefixes
+		const char* versionNumberStr = glVersionStr;
+		if (!strncmp(versionNumberStr, "OpenGL ES ", 10)) {
+			versionNumberStr += 10;
+		} else if (!strncmp(versionNumberStr, "WebGL ", 6)) {
+			versionNumberStr += 6;
+		}
+		
+		double glVersion = strtod(versionNumberStr, NULL);
+
+#if defined(__EMSCRIPTEN__)
+		// Force to 3.0 if running WebGL 2 / ES 3 context to bypass parsing issues
+		if (glVersion < 3.0) glVersion = 3.0;
+#endif
 
 		Printf("GL Version parsed = %f\n", glVersion);
 
@@ -175,7 +188,6 @@ namespace OpenGLESRenderer
 		gles.modelstring = (char*)glGetString(GL_RENDERER);
 		gles.vendorstring = (char*)glGetString(GL_VENDOR);
 
-
 		gl_customshader = false; // Disable user shaders for GLES renderer
 
 		GLint maxTextureSize[1];
@@ -184,13 +196,17 @@ namespace OpenGLESRenderer
 
 		Printf("GL_MAX_TEXTURE_SIZE: %d\n", gles.max_texturesize);
 
+		// Determine GLES Mode
+		bool isGLES = !strncmp(glVersionStr, "OpenGL ES", strlen("OpenGL ES"));
+#if defined(__EMSCRIPTEN__)
+		isGLES = true;
+#endif
 
-		// Check if running on a GLES device, version string will start with 'OpenGL ES'
-		if (!strncmp(glVersionStr, "OpenGL ES", strlen("OpenGL ES")))
+		if (isGLES)
 		{
 			gles.glesMode = GLES_MODE_GLES;
 		}
-		else // Else runnning on Desktop, check OpenGL version is 3 or above
+		else // Desktop
 		{
 			if (glVersion > 3.29)
 				gles.glesMode = GLES_MODE_OGL3; // 3.3 or above
@@ -198,21 +214,22 @@ namespace OpenGLESRenderer
 				gles.glesMode = GLES_MODE_OGL2; // Below 3.3
 		}
 
-
 		if (gles.glesMode == GLES_MODE_GLES)
 		{
 			Printf("GLES choosing mode: GLES_MODE_GLES\n");
 
-			gles.shaderVersionString = "100";
-			gles.depthStencilAvailable = CheckExtension("GL_OES_packed_depth_stencil");
-			gles.npotAvailable = CheckExtension("GL_OES_texture_npot");
+			gles.shaderVersionString = (glVersion >= 3.0) ? "300 es" : "100";
+			
+			// If on GLES 3.0 (WebGL 2), these are core features, not extensions
+			gles.depthStencilAvailable = (glVersion >= 3.0) || CheckExtension("GL_OES_packed_depth_stencil") || CheckExtension("GL_EXT_packed_depth_stencil");
+			gles.npotAvailable         = (glVersion >= 3.0) || CheckExtension("GL_OES_texture_npot");
+			
 			gles.depthClampAvailable = CheckExtension("GL_EXT_depth_clamp");
 			gles.anistropicFilterAvailable = CheckExtension("GL_EXT_texture_filter_anisotropic");
 		}
 		else if (gles.glesMode == GLES_MODE_OGL2)
 		{
 			Printf("GLES choosing mode: GLES_MODE_OGL2\n");
-
 			gles.shaderVersionString = "100";
 			gles.depthStencilAvailable = true;
 			gles.npotAvailable = true;
@@ -223,7 +240,6 @@ namespace OpenGLESRenderer
 		else if (gles.glesMode == GLES_MODE_OGL3)
 		{
 			Printf("GLES choosing mode: GLES_MODE_OGL3\n");
-
 			gles.shaderVersionString = "330";
 			gles.depthStencilAvailable = true;
 			gles.npotAvailable = true;

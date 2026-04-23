@@ -37,6 +37,9 @@
 
 #include <type_traits>
 #include <cstdint>
+#if defined(__EMSCRIPTEN__)
+#include <vector>
+#endif
 
 #if defined(__clang__)
 #if defined(__has_feature) && __has_feature(address_sanitizer)
@@ -59,6 +62,9 @@ class FAutoSeg
 	const char *name;
 	void **begin;
 	void **end;
+#if defined(__EMSCRIPTEN__)
+	std::vector<void*> *dynamicEntries;
+#endif
 
 	template <typename T>
 	struct ArgumentType;
@@ -90,6 +96,18 @@ class FAutoSeg
 	template <typename Func, typename Ret>
 	static constexpr bool HasReturnTypeV = HasReturnType<Func, Ret>::Value;
 
+	static bool IsValidEntry(void **it)
+	{
+#if defined(__EMSCRIPTEN__)
+		// Wasm linker sections may contain padding/placeholder values; keep only
+		// non-null, pointer-aligned entries that look like real data pointers.
+		const uintptr_t value = reinterpret_cast<uintptr_t>(*it);
+		return value > 0xffff && (value & (alignof(void*) - 1)) == 0;
+#else
+		return intptr_t(it) > 0xffff && *it && intptr_t(*it) > 0xffff;
+#endif
+	}
+
 	void Initialize();
 
 public:
@@ -97,6 +115,9 @@ public:
 	: name(name)
 	, begin(nullptr)
 	, end(nullptr)
+#if defined(__EMSCRIPTEN__)
+	, dynamicEntries(nullptr)
+#endif
 	{
 		Initialize();
 	}
@@ -105,8 +126,21 @@ public:
 	: name(nullptr)
 	, begin(begin)
 	, end(end)
+#if defined(__EMSCRIPTEN__)
+	, dynamicEntries(nullptr)
+#endif
 	{
 	}
+
+#if defined(__EMSCRIPTEN__)
+	explicit FAutoSeg(std::vector<void*> *entries)
+	: name(nullptr)
+	, begin(nullptr)
+	, end(nullptr)
+	, dynamicEntries(entries)
+	{
+	}
+#endif
 
 	template <typename Func>
 	void NO_SANITIZE_M ForEach(Func func, std::enable_if_t<HasReturnTypeV<Func, void>> * = nullptr)
@@ -114,9 +148,23 @@ public:
 		using CallableType = decltype(&Func::operator());
 		using ArgType = typename ArgumentType<CallableType>::Type;
 
+#if defined(__EMSCRIPTEN__)
+		if (dynamicEntries != nullptr)
+		{
+			for (auto *entry : *dynamicEntries)
+			{
+				if (entry != nullptr)
+				{
+					func(reinterpret_cast<ArgType>(entry));
+				}
+			}
+			return;
+		}
+#endif
+
 		for (void **it = begin; it < end; ++it)
 		{
-			if (intptr_t(it) > 0xffff && *it && intptr_t(*it) > 0xffff)
+			if (IsValidEntry(it))
 			{
 				func(reinterpret_cast<ArgType>(*it));
 			}
@@ -129,9 +177,26 @@ public:
 		using CallableType = decltype(&Func::operator());
 		using ArgType = typename ArgumentType<CallableType>::Type;
 
+#if defined(__EMSCRIPTEN__)
+		if (dynamicEntries != nullptr)
+		{
+			for (auto *entry : *dynamicEntries)
+			{
+				if (entry != nullptr)
+				{
+					if (!func(reinterpret_cast<ArgType>(entry)))
+					{
+						return;
+					}
+				}
+			}
+			return;
+		}
+#endif
+
 		for (void **it = begin; it < end; ++it)
 		{
-			if (intptr_t(it) > 0xffff && *it && intptr_t(*it) > 0xffff)
+			if (IsValidEntry(it))
 			{
 				if (!func(reinterpret_cast<ArgType>(*it)))
 				{
@@ -150,6 +215,14 @@ namespace AutoSegs
 	extern FAutoSeg Properties;
 	extern FAutoSeg MapInfoOptions;
 	extern FAutoSeg CVarDecl;
+#if defined(__EMSCRIPTEN__)
+	void RegisterActionFunction(void *entry);
+	void RegisterTypeInfo(void *entry);
+	void RegisterClassField(void *entry);
+	void RegisterProperty(void *entry);
+	void RegisterMapInfoOption(void *entry);
+	void RegisterCVarDecl(void *entry);
+#endif
 }
 
 #define AUTOSEG_AREG areg

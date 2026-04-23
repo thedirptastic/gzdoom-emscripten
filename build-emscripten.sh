@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOST_BUILD_DIR="${ROOT_DIR}/build-host-tools"
+WASM_BUILD_DIR="${ROOT_DIR}/build-emscripten"
+BUILD_TYPE="${BUILD_TYPE:-Release}"
+EMSCRIPTEN_PTHREADS="${EMSCRIPTEN_PTHREADS:-0}"
+EMSCRIPTEN_INITIAL_MEMORY="${EMSCRIPTEN_INITIAL_MEMORY:-268435456}"
+CLEAN="${CLEAN:-0}"
+
+if [[ "${EMSCRIPTEN_PTHREADS}" == "1" ]]; then
+  EMSCRIPTEN_PTHREADS_CMAKE="ON"
+else
+  EMSCRIPTEN_PTHREADS_CMAKE="OFF"
+fi
+
+ZMUSIC_DIR="${ZMUSIC_DIR:-$(cd "${ROOT_DIR}/../zmusic" && pwd)}"
+ZMUSIC_BUILD_DIR="${ZMUSIC_BUILD_DIR:-${ZMUSIC_DIR}/build-emscripten}"
+ZMUSIC_LIB="${ZMUSIC_LIB:-${ZMUSIC_BUILD_DIR}/source/libzmusic.a}"
+ZMUSIC_INCLUDE_DIR="${ZMUSIC_INCLUDE_DIR:-${ZMUSIC_DIR}/include}"
+
+: "${EM_CACHE:=/tmp/emscripten-cache}"
+mkdir -p "${EM_CACHE}"
+export EM_CACHE
+
+if [[ "${CLEAN}" == "1" ]]; then
+  rm -rf "${HOST_BUILD_DIR}" "${WASM_BUILD_DIR}"
+fi
+
+if [[ "${BUILD_ZMUSIC:-1}" == "1" ]]; then
+  if [[ -x "${ZMUSIC_DIR}/build-emscripten.sh" ]]; then
+    BUILD_TYPE="${BUILD_TYPE}" EMSCRIPTEN_PTHREADS="${EMSCRIPTEN_PTHREADS}" CLEAN="${CLEAN}" "${ZMUSIC_DIR}/build-emscripten.sh"
+  else
+    emcmake cmake -S "${ZMUSIC_DIR}" -B "${ZMUSIC_BUILD_DIR}" \
+      -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
+      -DEMSCRIPTEN_PTHREADS="${EMSCRIPTEN_PTHREADS_CMAKE}"
+    cmake --build "${ZMUSIC_BUILD_DIR}" --clean-first -j"$(nproc)"
+  fi
+fi
+
+cmake -S "${ROOT_DIR}" -B "${HOST_BUILD_DIR}" \
+  -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
+  -DGZDOOM_HOST_TOOLS_ONLY=ON
+cmake --build "${HOST_BUILD_DIR}" --clean-first -j"$(nproc)"
+
+EM_DEBUG_COMPILE_FLAGS=""
+EM_DEBUG_LINK_FLAGS=""
+EM_WEBGL_LINK_FLAGS="-sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2"
+EM_EXPORTED_RUNTIME_METHODS_FLAGS="-sEXPORTED_RUNTIME_METHODS=callMain"
+EM_SOURCEMAP_COMPILE_FLAGS=""
+EM_SOURCEMAP_LINK_FLAGS=""
+EM_WARNING_SUPPRESS_FLAGS="-Wno-unnecessary-virtual-specifier"
+if [[ "${DEBUG_ASSERTIONS:-0}" == "1" ]]; then
+  EM_DEBUG_COMPILE_FLAGS="-g3"
+  EM_DEBUG_LINK_FLAGS="-g3 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2 -sNO_DISABLE_EXCEPTION_CATCHING=1 -sEXCEPTION_STACK_TRACES=1"
+  EM_EXPORTED_RUNTIME_METHODS_FLAGS="-sEXPORTED_RUNTIME_METHODS=callMain,getExceptionMessage,decrementExceptionRefcount"
+fi
+
+if [[ "${SOURCE_MAPS:-0}" == "1" ]]; then
+  EM_SOURCEMAP_COMPILE_FLAGS="-gsource-map"
+  EM_SOURCEMAP_LINK_FLAGS="-gsource-map --source-map-base http://127.0.0.1:8000/"
+fi
+
+CMAKE_ARGS=(
+  -S "${ROOT_DIR}"
+  -B "${WASM_BUILD_DIR}"
+  -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
+  -DNO_FMOD=ON
+  -DNO_OPENAL=ON
+  -DNO_STRIP=ON
+  -DHAVE_VULKAN=OFF
+  -DENABLE_VPX_CUTSCENES=OFF
+  -DIMPORT_EXECUTABLES="${HOST_BUILD_DIR}/ImportExecutables.cmake"
+  -DEMSCRIPTEN_PTHREADS="${EMSCRIPTEN_PTHREADS_CMAKE}"
+  -DEMSCRIPTEN_INITIAL_MEMORY="${EMSCRIPTEN_INITIAL_MEMORY}"
+  -DZMUSIC_INCLUDE_DIR="${ZMUSIC_INCLUDE_DIR}"
+  -DZMUSIC_LIBRARIES="${ZMUSIC_LIB}"
+)
+
+CMAKE_ARGS+=(
+  "-DCMAKE_EXE_LINKER_FLAGS=${EM_WEBGL_LINK_FLAGS} ${EM_EXPORTED_RUNTIME_METHODS_FLAGS} ${EM_DEBUG_LINK_FLAGS} ${EM_SOURCEMAP_LINK_FLAGS}"
+  "-DCMAKE_CXX_FLAGS=${EM_WARNING_SUPPRESS_FLAGS} ${EM_DEBUG_COMPILE_FLAGS} ${EM_SOURCEMAP_COMPILE_FLAGS}"
+  "-DCMAKE_C_FLAGS=${EM_DEBUG_COMPILE_FLAGS} ${EM_SOURCEMAP_COMPILE_FLAGS}"
+)
+
+emcmake cmake "${CMAKE_ARGS[@]}"
+
+cmake --build "${WASM_BUILD_DIR}" --clean-first -j"$(nproc)"
+
+if [[ "${SOURCE_MAPS:-0}" != "1" ]]; then
+  rm -f "${WASM_BUILD_DIR}/gzdoom.wasm.map"
+fi
+
+echo "Built:"
+echo "  ${WASM_BUILD_DIR}/gzdoom.js"
+echo "  ${WASM_BUILD_DIR}/gzdoom.wasm"

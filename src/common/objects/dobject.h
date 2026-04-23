@@ -137,6 +137,11 @@ public: \
 #if defined(_MSC_VER)
 #	pragma section(SECTION_CREG,read)
 #	define _DECLARE_TI(cls) __declspec(allocate(SECTION_CREG)) ClassReg * const cls::RegistrationInfoPtr = &cls::RegistrationInfo;
+#elif defined(__EMSCRIPTEN__)
+#	define _DECLARE_TI(cls) \
+	ClassReg * const cls::RegistrationInfoPtr __attribute__((used)) = &cls::RegistrationInfo; \
+	namespace { struct AutoSegTypeInfoReg_##cls { AutoSegTypeInfoReg_##cls() { AutoSegs::RegisterTypeInfo((void*)cls::RegistrationInfoPtr); } }; \
+	static AutoSegTypeInfoReg_##cls AutoSegTypeInfoRegInst_##cls; }
 #else
 #	define _DECLARE_TI(cls) ClassReg * const cls::RegistrationInfoPtr __attribute__((section(SECTION_CREG))) = &cls::RegistrationInfo;
 #endif

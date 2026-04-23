@@ -3,7 +3,11 @@
 #include <list>
 #include <unordered_map>
 #include <zwidget/window/window.h>
+#ifdef __EMSCRIPTEN__
+#include <SDL.h>
+#else
 #include <SDL2/SDL.h>
+#endif
 
 class SDL2DisplayWindow : public DisplayWindow
 {

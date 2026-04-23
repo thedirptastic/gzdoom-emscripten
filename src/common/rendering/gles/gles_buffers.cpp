@@ -39,6 +39,10 @@
 #include "v_video.h"
 #include "flatvertices.h"
 
+#if defined(__EMSCRIPTEN__)
+extern "C" void emscripten_glVertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, const void *pointer);
+#endif
+
 namespace OpenGLESRenderer
 {
 
@@ -274,7 +278,11 @@ void GLVertexBuffer::SetFormat(int numBindingPoints, int numAttributes, size_t s
 	static int VFmtToGLFmt[] = { GL_FLOAT, GL_FLOAT, GL_FLOAT, GL_FLOAT, GL_UNSIGNED_BYTE, GL_INT_2_10_10_10_REV, GL_UNSIGNED_BYTE }; // TODO Fix last entry GL_INT_2_10_10_10_REV, normals for models will be broken
 	static uint8_t VFmtToSize[] = {4, 3, 2, 1, 4, 4, 4};
 	static bool VFmtToNormalize[] = { false, false, false, false, true, true, false };
+#if defined(__EMSCRIPTEN__)
+	static bool VFmtToIntegerType[] = { false, false, false, false, false, false, false };
+#else
 	static bool VFmtToIntegerType[] = { false, false, false, false, false, false, true };
+#endif
 
 	mStride = stride;
 	mNumBindingPoints = numBindingPoints;
@@ -306,20 +314,33 @@ void GLVertexBuffer::Bind(int *offsets)
 		{
 			glDisableVertexAttribArray(i);
 		}
-		else
-		{
-			glEnableVertexAttribArray(i);
-			size_t ofs = offsets == nullptr ? attrinf.offset : attrinf.offset + mStride * offsets[attrinf.bindingpoint];
-			if (!attrinf.integerType)
-				glVertexAttribPointer(i, attrinf.size, attrinf.format, attrinf.normalize, (GLsizei)mStride, (void*)(intptr_t)ofs);
 			else
 			{
-				if (gles.glesMode >= GLES_MODE_OGL3)
+				glEnableVertexAttribArray(i);
+				size_t ofs = offsets == nullptr ? attrinf.offset : attrinf.offset + mStride * offsets[attrinf.bindingpoint];
+				if (!attrinf.integerType)
+				{
+					glVertexAttribPointer(i, attrinf.size, attrinf.format, attrinf.normalize, (GLsizei)mStride, (void*)(intptr_t)ofs);
+				}
+				else if (glVertexAttribIPointer != nullptr)
+				{
 					glVertexAttribIPointer(i, attrinf.size, attrinf.format, (GLsizei)mStride, (void*)(intptr_t)ofs);
+				}
+#if defined(__EMSCRIPTEN__)
+				else
+				{
+					// Emscripten WebGL2 exposes this directly even when dynamic proc lookup fails.
+					emscripten_glVertexAttribIPointer(i, attrinf.size, attrinf.format, (GLsizei)mStride, (void*)(intptr_t)ofs);
+				}
+#else
+				else
+				{
+					glVertexAttribPointer(i, attrinf.size, attrinf.format, attrinf.normalize, (GLsizei)mStride, (void*)(intptr_t)ofs);
+				}
+#endif
 			}
+			i++;
 		}
-		i++;
-	}
 }
 
 void GLDataBuffer::BindRange(FRenderState *state, size_t start, size_t length)

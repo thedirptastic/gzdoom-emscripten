@@ -1885,6 +1885,10 @@ void TryRunTics (void)
 
 	bool doWait = (cl_capfps || pauseext || (r_NoInterpolate && !M_IsAnimated()));
 
+#if defined(__EMSCRIPTEN__)
+	doWait = false;
+#endif
+
 	if (vid_dontdowait && ((vid_maxfps > 0) || (vid_vsync == true)))
 		doWait = false;
 

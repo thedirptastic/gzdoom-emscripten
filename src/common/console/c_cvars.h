@@ -724,12 +724,21 @@ void C_ForgetCVars (void);
 #define GCC_VSEG __attribute__((section(SECTION_VREG))) __attribute__((used))
 #endif
 
+#if defined(__EMSCRIPTEN__)
+#define AUTOSEG_REGISTER_VREG(symbol) \
+	namespace { struct AutoSegVReg_##symbol { AutoSegVReg_##symbol() { AutoSegs::RegisterCVarDecl((void*)symbol); } }; \
+	static AutoSegVReg_##symbol AutoSegVRegInst_##symbol; }
+#else
+#define AUTOSEG_REGISTER_VREG(symbol)
+#endif
+
 #define CUSTOM_CVAR(type,name,def,flags) \
 	static void cvarfunc_##name(F##type##CVar &); \
 	F##type##CVarRef name; \
 	static FCVarDecl cvardecl_##name = { &name, CVAR_##type, (flags), #name, CVarValue<CVAR_##type>(def), nullptr, reinterpret_cast<void*>(cvarfunc_##name) }; \
 	extern FCVarDecl const *const cvardeclref_##name; \
 	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name; \
+	AUTOSEG_REGISTER_VREG(cvardeclref_##name) \
 	static void cvarfunc_##name(F##type##CVar &self)
 
 
@@ -739,13 +748,15 @@ void C_ForgetCVars (void);
 	static FCVarDecl cvardecl_##name = { &name, CVAR_##type, (flags), #cname, CVarValue<CVAR_##type>(def), nullptr, reinterpret_cast<void*>(cvarfunc_##name) }; \
 	extern FCVarDecl const *const cvardeclref_##name; \
 	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name; \
+	AUTOSEG_REGISTER_VREG(cvardeclref_##name) \
 	static void cvarfunc_##name(F##type##CVar &self)
 
 #define CVAR(type,name,def,flags) \
 	F##type##CVarRef name; \
 	static FCVarDecl cvardecl_##name = { &name, CVAR_##type, (flags), #name, CVarValue<CVAR_##type>(def), nullptr, nullptr}; \
 	extern FCVarDecl const *const cvardeclref_##name; \
-	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name;
+	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name; \
+	AUTOSEG_REGISTER_VREG(cvardeclref_##name)
 
 #define EXTERN_CVAR(type,name) extern F##type##CVarRef name;
 
@@ -755,18 +766,21 @@ void C_ForgetCVars (void);
 	static FCVarDecl cvardecl_##name = { &name, CVAR_##type, (flags), #name, CVarValue<CVAR_##type>(def), descr, reinterpret_cast<void*>(cvarfunc_##name) }; \
 	extern FCVarDecl const *const cvardeclref_##name; \
 	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name; \
+	AUTOSEG_REGISTER_VREG(cvardeclref_##name) \
 	static void cvarfunc_##name(F##type##CVar &self)
 
 #define CVARD(type,name,def,flags, descr) \
 	F##type##CVarRef name; \
 	static FCVarDecl cvardecl_##name = { &name, CVAR_##type, (flags), #name, CVarValue<CVAR_##type>(def), descr, nullptr}; \
 	extern FCVarDecl const *const cvardeclref_##name; \
-	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name;
+	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name; \
+	AUTOSEG_REGISTER_VREG(cvardeclref_##name)
 
 #define CVARD_NAMED(type,name,varname,def,flags, descr) \
 	F##type##CVarRef name; \
 	static FCVarDecl cvardecl_##name = { &name, CVAR_##type, (flags), #varname, CVarValue<CVAR_##type>(def), descr, nullptr}; \
 	extern FCVarDecl const *const cvardeclref_##name; \
-	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name;
+	MSVC_VSEG FCVarDecl const *const cvardeclref_##name GCC_VSEG = &cvardecl_##name; \
+	AUTOSEG_REGISTER_VREG(cvardeclref_##name)
 
 #endif //__C_CVARS_H__

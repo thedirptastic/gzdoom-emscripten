@@ -55,6 +55,14 @@ class FSerializer;
 #define GCC_YSEG __attribute__((section(SECTION_YREG))) __attribute__((used))
 #endif
 
+#if defined(__EMSCRIPTEN__)
+#define AUTOSEG_REGISTER_YREG(symbol) \
+	namespace { struct AutoSegYReg_##symbol { AutoSegYReg_##symbol() { AutoSegs::RegisterMapInfoOption((void*)symbol); } }; \
+	static AutoSegYReg_##symbol AutoSegYRegInst_##symbol; }
+#else
+#define AUTOSEG_REGISTER_YREG(symbol)
+#endif
+
 // The structure used to control scripts between maps
 struct acsdefered_t
 {
@@ -146,6 +154,7 @@ struct FMapInfoParser
 	static FMapOptInfo MapOpt_##name = \
 		{ #name, MapOptHandler_##name, old }; \
 	MSVC_YSEG FMapOptInfo *mapopt_##name GCC_YSEG = &MapOpt_##name; \
+	AUTOSEG_REGISTER_YREG(mapopt_##name) \
 	static void MapOptHandler_##name(FMapInfoParser &parse, level_info_t *info)
 
 

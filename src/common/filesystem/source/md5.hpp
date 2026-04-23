@@ -196,7 +196,7 @@ namespace FileSys {
                      * On little-endian machines, we can process properly aligned
                      * data without copying it.
                      */
-                    if (!((data - (md5_byte_t const*)0) & 3)) {
+                    if ((reinterpret_cast<size_t>(data) & 3) == 0) {
                         /* data are properly aligned */
                         X = (md5_word_t const*)data;
                     }
@@ -413,4 +413,3 @@ namespace FileSys {
 
     } // md5
 } // fs_private
-

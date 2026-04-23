@@ -35,7 +35,9 @@
 #include "bitmap.h"
 #include "texturemanager.h"
 
+#ifdef USE_LIBVPX
 #include "vpx/vpx_image.h"
+#endif
 
 
 //==========================================================================
@@ -86,84 +88,86 @@ void AnimTexture::SetFrame(const uint8_t* Palette, const void* data_)
 				dpix += 4;
 			}
 		}
-		else if(pixelformat == VPX)
-		{
-			const vpx_image_t *img = reinterpret_cast<const vpx_image_t *>(data_);
-			
-			uint8_t const* const yplane = img->planes[VPX_PLANE_Y];
-			uint8_t const* const uplane = img->planes[VPX_PLANE_U];
-			uint8_t const* const vplane = img->planes[VPX_PLANE_V];
-
-			const int ystride = img->stride[VPX_PLANE_Y];
-			const int ustride = img->stride[VPX_PLANE_U];
-			const int vstride = img->stride[VPX_PLANE_V];
-
-			if(img->fmt == VPX_IMG_FMT_I420)
+			else if(pixelformat == VPX)
 			{
-				for (unsigned int y = 0; y < Height; y++)
+#ifdef USE_LIBVPX
+				const vpx_image_t *img = reinterpret_cast<const vpx_image_t *>(data_);
+
+				uint8_t const* const yplane = img->planes[VPX_PLANE_Y];
+				uint8_t const* const uplane = img->planes[VPX_PLANE_U];
+				uint8_t const* const vplane = img->planes[VPX_PLANE_V];
+
+				const int ystride = img->stride[VPX_PLANE_Y];
+				const int ustride = img->stride[VPX_PLANE_U];
+				const int vstride = img->stride[VPX_PLANE_V];
+
+				if(img->fmt == VPX_IMG_FMT_I420)
 				{
-					for (unsigned int x = 0; x < Width; x++)
+					for (unsigned int y = 0; y < Height; y++)
 					{
-						YUVtoRGB(
+						for (unsigned int x = 0; x < Width; x++)
+						{
+							YUVtoRGB(
+									yplane[ystride * y + x],
+									uplane[ustride * (y >> 1) + (x >> 1)],
+									vplane[vstride * (y >> 1) + (x >> 1)],
+									dpix
+							);
+
+							dpix += 4;
+						}
+					}
+				}
+				else if(img->fmt == VPX_IMG_FMT_I444)
+				{
+					for (unsigned int y = 0; y < Height; y++)
+					{
+						for (unsigned int x = 0; x < Width; x++)
+						{
+							YUVtoRGB(
 								yplane[ystride * y + x],
-								uplane[ustride * (y >> 1) + (x >> 1)],
-								vplane[vstride * (y >> 1) + (x >> 1)],
+								uplane[ustride * y + x],
+								vplane[vstride * y + x],
 								dpix
-						);
-
-						dpix += 4;
+							);
+							dpix += 4;
+						}
 					}
 				}
-			}
-			else if(img->fmt == VPX_IMG_FMT_I444)
-			{
-				for (unsigned int y = 0; y < Height; y++)
-				{
-					for (unsigned int x = 0; x < Width; x++)
+				else if(img->fmt == VPX_IMG_FMT_I422)
+				{ // 422 and 440 untested
+					for (unsigned int y = 0; y < Height; y++)
 					{
-						YUVtoRGB(
-							yplane[ystride * y + x],
-							uplane[ustride * y + x],
-							vplane[vstride * y + x],
-							dpix
-						);
-						dpix += 4;
+						for (unsigned int x = 0; x < Width; x++)
+						{
+							YUVtoRGB(
+								yplane[ystride * y + x],
+								uplane[ustride * y + (x >> 1)],
+								vplane[vstride * y + (x >> 1)],
+								dpix
+							);
+							dpix += 4;
+						}
 					}
 				}
-			}
-			else if(img->fmt == VPX_IMG_FMT_I422)
-			{ // 422 and 440 untested
-				for (unsigned int y = 0; y < Height; y++)
+				else if(img->fmt == VPX_IMG_FMT_I440)
 				{
-					for (unsigned int x = 0; x < Width; x++)
+					for (unsigned int y = 0; y < Height; y++)
 					{
-						YUVtoRGB(
-							yplane[ystride * y + x],
-							uplane[ustride * y + (x >> 1)],
-							vplane[vstride * y + (x >> 1)],
-							dpix
-						);
-						dpix += 4;
+						for (unsigned int x = 0; x < Width; x++)
+						{
+							YUVtoRGB(
+								yplane[ystride * y + x],
+								uplane[ustride * (y >> 1) + x],
+								vplane[vstride * (y >> 1) + x],
+								dpix
+							);
+							dpix += 4;
+						}
 					}
 				}
+#endif
 			}
-			else if(img->fmt == VPX_IMG_FMT_I440)
-			{
-				for (unsigned int y = 0; y < Height; y++)
-				{
-					for (unsigned int x = 0; x < Width; x++)
-					{
-						YUVtoRGB(
-							yplane[ystride * y + x],
-							uplane[ustride * (y >> 1) + x],
-							vplane[vstride * (y >> 1) + x],
-							dpix
-						);
-						dpix += 4;
-					}
-				}
-			}
-		}
 		else if(pixelformat == RGB)
 		{
 			const uint8_t *img = reinterpret_cast<const uint8_t *>(data_);

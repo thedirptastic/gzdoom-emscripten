@@ -41,7 +41,11 @@
 #include "c_cvars.h"
 #include "printf.h"
 
+#ifdef __EMSCRIPTEN__
+#define DEF_MIDIDEV -2
+#else
 #define DEF_MIDIDEV -5
+#endif
 
 EXTERN_CVAR(Int, snd_mididevice)
 
@@ -107,12 +111,37 @@ CUSTOM_CVAR (Int, snd_mididevice, DEF_MIDIDEV, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CV
 	}
 	if (!found)
 	{
+		int fallback = -1;
+		for (int i = 0; i < amount; i++)
+		{
+			if (list[i].ID == -2) // TiMidity++
+			{
+				fallback = -2;
+				break;
+			}
+		}
+		if (fallback == -1)
+		{
+			for (int i = 0; i < amount; i++)
+			{
+				if (list[i].ID == -3) // OPL
+				{
+					fallback = -3;
+					break;
+				}
+			}
+		}
+		if (fallback == -1 && amount > 0)
+		{
+			fallback = list[0].ID;
+		}
+
 		// Don't do repeated message spam if there is no valid device.
-		if (self != 0 && self != -1)
+		if (self != 0 && self != fallback)
 		{
 			Printf("ID out of range. Using default device.\n");
 		}
-		if (self != DEF_MIDIDEV) self = DEF_MIDIDEV;
+		if (self != fallback) self = fallback;
 		return;
 	}
 	bool change = ChangeMusicSetting(zmusic_snd_mididevice, nullptr, self);

@@ -36,6 +36,10 @@
 #include <unistd.h>
 #endif
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #include <math.h>
 #include <assert.h>
 
@@ -180,6 +184,10 @@ void D_GrabCVarDefaults();
 void LoadHexFont(const char* filename);
 void InitBuildTiles();
 bool OkForLocalization(FTextureID texnum, const char* substitute);
+static bool D_RunFrame();
+#if defined(__EMSCRIPTEN__)
+static void D_RunFrameEmscripten();
+#endif
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
@@ -1200,8 +1208,6 @@ void D_ErrorCleanup ()
 
 void D_DoomLoop ()
 {
-	int lasttic = 0;
-
 	// Clamp the timer to TICRATE until the playloop has been entered.
 	r_NoInterpolate = true;
 	Page.SetInvalid();
@@ -1210,77 +1216,104 @@ void D_DoomLoop ()
 
 	vid_cursor->Callback();
 
+#if defined(__EMSCRIPTEN__)
+	emscripten_set_main_loop(D_RunFrameEmscripten, 0, 1);
+#else
 	for (;;)
 	{
-		try
+		if (!D_RunFrame())
 		{
-			GStrings.SetDefaultGender(players[consoleplayer].userinfo.GetGender()); // cannot be done when the CVAR changes because we don't know if it's for the consoleplayer.
-
-			// frame syncronous IO operations
-			if (gametic > lasttic)
-			{
-				lasttic = gametic;
-				I_StartFrame ();
-			}
-			I_SetFrameTime();
-
-			// process one or more tics
-			if (singletics)
-			{
-				I_StartTic ();
-				D_ProcessEvents ();
-				G_BuildTiccmd (&netcmds[consoleplayer][maketic%BACKUPTICS]);
-				if (advancedemo)
-					D_DoAdvanceDemo ();
-				C_Ticker ();
-				M_Ticker ();
-				G_Ticker ();
-				// [RH] Use the consoleplayer's camera to update sounds
-				S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
-				gametic++;
-				maketic++;
-				GC::CheckGC ();
-				Net_NewMakeTic ();
-			}
-			else
-			{
-				TryRunTics (); // will run at least one tic
-			}
-			// Update display, next frame, with current state.
-			I_StartTic ();
-			D_ProcessEvents();
-			D_Display ();
-			S_UpdateMusic();
-			if (wantToRestart)
-			{
-				wantToRestart = false;
-				return;
-			}
-		}
-		catch (const CRecoverableError &error)
-		{
-			if (error.GetMessage ())
-			{
-				Printf (PRINT_NONOTIFY | PRINT_BOLD, "\n%s\n", error.GetMessage());
-			}
-			D_ErrorCleanup ();
-		}
-		catch (const FileSystemException& error) // in case this propagates up to here it should be treated as a recoverable error.
-		{
-			if (error.what())
-			{
-				Printf(PRINT_NONOTIFY | PRINT_BOLD, "\n%s\n", error.what());
-			}
-			D_ErrorCleanup();
-		}
-		catch (CVMAbortException &error)
-		{
-			error.MaybePrintMessage();
-			Printf(PRINT_NONOTIFY | PRINT_BOLD, "%s", error.stacktrace.GetChars());
-			D_ErrorCleanup();
+			return;
 		}
 	}
+#endif
 }
+
+static bool D_RunFrame()
+{
+	static int lasttic = 0;
+
+	try
+	{
+		GStrings.SetDefaultGender(players[consoleplayer].userinfo.GetGender()); // cannot be done when the CVAR changes because we don't know if it's for the consoleplayer.
+
+		// frame syncronous IO operations
+		if (gametic > lasttic)
+		{
+			lasttic = gametic;
+			I_StartFrame ();
+		}
+		I_SetFrameTime();
+
+		// process one or more tics
+		if (singletics)
+		{
+			I_StartTic ();
+			D_ProcessEvents ();
+			G_BuildTiccmd (&netcmds[consoleplayer][maketic%BACKUPTICS]);
+			if (advancedemo)
+				D_DoAdvanceDemo ();
+			C_Ticker ();
+			M_Ticker ();
+			G_Ticker ();
+			// [RH] Use the consoleplayer's camera to update sounds
+			S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
+			gametic++;
+			maketic++;
+			GC::CheckGC ();
+			Net_NewMakeTic ();
+		}
+		else
+		{
+			TryRunTics (); // single browser frame, no blocking wait
+		}
+		// Update display, next frame, with current state.
+		I_StartTic ();
+		D_ProcessEvents();
+		D_Display ();
+		S_UpdateMusic();
+		if (wantToRestart)
+		{
+			wantToRestart = false;
+#if defined(__EMSCRIPTEN__)
+			I_FatalError("Restart is not supported in the current web build.");
+#else
+			return false;
+#endif
+		}
+	}
+	catch (const CRecoverableError &error)
+	{
+		if (error.GetMessage ())
+		{
+			Printf (PRINT_NONOTIFY | PRINT_BOLD, "\n%s\n", error.GetMessage());
+		}
+		D_ErrorCleanup ();
+	}
+	catch (const FileSystemException& error) // in case this propagates up to here it should be treated as a recoverable error.
+	{
+		if (error.what())
+		{
+			Printf(PRINT_NONOTIFY | PRINT_BOLD, "\n%s\n", error.what());
+		}
+		D_ErrorCleanup();
+	}
+	catch (CVMAbortException &error)
+	{
+		error.MaybePrintMessage();
+		Printf(PRINT_NONOTIFY | PRINT_BOLD, "%s", error.stacktrace.GetChars());
+		D_ErrorCleanup();
+	}
+
+	return true;
+}
+
+#if defined(__EMSCRIPTEN__)
+static void D_RunFrameEmscripten()
+{
+	(void)D_RunFrame();
+}
+#endif
 
 //==========================================================================
 //

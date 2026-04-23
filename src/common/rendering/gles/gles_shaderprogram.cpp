@@ -241,6 +241,26 @@ FString FShaderProgram::PatchShader(ShaderType type, const FString &code, const 
 
 	patchedCode += GetGLSLPrecision();
 
+	const bool isGlsl300Plus = gles.shaderVersionString != nullptr &&
+		(gles.shaderVersionString[0] == '3' || gles.shaderVersionString[0] == '4');
+	if (isGlsl300Plus)
+	{
+		if (type == Vertex)
+		{
+			patchedCode << "#define attribute in\n";
+			patchedCode << "#define varying out\n";
+		}
+		else
+		{
+			patchedCode << "#define attribute in\n";
+			patchedCode << "#define varying in\n";
+			patchedCode << "out vec4 FragColor;\n";
+			patchedCode << "#define gl_FragColor FragColor\n";
+		}
+		patchedCode << "#define texture2D texture\n";
+		patchedCode << "#define textureCube texture\n";
+	}
+
 
 	if (defines)
 		patchedCode << defines;

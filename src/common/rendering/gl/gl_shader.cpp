@@ -390,10 +390,19 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	assert(screen->mBones != NULL);
 
 
+#if defined(__EMSCRIPTEN__)
+	// WebGL 2.0 / OpenGL ES 3.0 requires this version string and precision
+	vp_comb << "#version 300 es\n";
+	vp_comb << "precision mediump float;\n";
+	// Polyfill old syntax for ES 3.0
+	vp_comb << "#define attribute in\n";
+	vp_comb << "#define varying out\n";
+#else
 	if ((gl.flags & RFL_SHADER_STORAGE_BUFFER) && screen->allowSSBO())
 		vp_comb << "#version 430 core\n#define SUPPORTS_SHADOWMAPS\n";
 	else 
 		vp_comb << "#version 330 core\n";
+#endif
 
 	bool lightbuffertype = screen->mLights->GetBufferType();
 	if (!lightbuffertype)
@@ -402,6 +411,12 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 		vp_comb << "#define SHADER_STORAGE_LIGHTS\n#define SHADER_STORAGE_BONES\n";
 
 	FString fp_comb = vp_comb;
+
+#if defined(__EMSCRIPTEN__)
+    // Overwrite the varying definition for the Fragment shader
+    fp_comb.Substitute("#define varying out", "#define varying in");
+#endif
+
 	vp_comb << defines << i_data.GetChars();
 	fp_comb << "$placeholder$\n" << defines << i_data.GetChars();
 

@@ -45,7 +45,80 @@
 #include <cassert>
 #include "autosegs.h"
 
-#ifdef _WIN32
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/emscripten.h>
+
+namespace
+{
+	std::vector<void*> &ActionFunctionsStorage()
+	{
+		static std::vector<void*> storage;
+		return storage;
+	}
+
+	std::vector<void*> &TypeInfosStorage()
+	{
+		static std::vector<void*> storage;
+		return storage;
+	}
+
+	std::vector<void*> &ClassFieldsStorage()
+	{
+		static std::vector<void*> storage;
+		return storage;
+	}
+
+	std::vector<void*> &PropertiesStorage()
+	{
+		static std::vector<void*> storage;
+		return storage;
+	}
+
+	std::vector<void*> &MapInfoOptionsStorage()
+	{
+		static std::vector<void*> storage;
+		return storage;
+	}
+
+	std::vector<void*> &CVarDeclStorage()
+	{
+		static std::vector<void*> storage;
+		return storage;
+	}
+}
+
+namespace AutoSegs
+{
+	void RegisterActionFunction(void *entry) { ActionFunctionsStorage().push_back(entry); }
+	void RegisterTypeInfo(void *entry) { TypeInfosStorage().push_back(entry); }
+	void RegisterClassField(void *entry) { ClassFieldsStorage().push_back(entry); }
+	void RegisterProperty(void *entry) { PropertiesStorage().push_back(entry); }
+	void RegisterMapInfoOption(void *entry) { MapInfoOptionsStorage().push_back(entry); }
+	void RegisterCVarDecl(void *entry) { CVarDeclStorage().push_back(entry); }
+
+	FAutoSeg ActionFunctons{ &ActionFunctionsStorage() };
+	FAutoSeg TypeInfos{ &TypeInfosStorage() };
+	FAutoSeg ClassFields{ &ClassFieldsStorage() };
+	FAutoSeg Properties{ &PropertiesStorage() };
+	FAutoSeg MapInfoOptions{ &MapInfoOptionsStorage() };
+	FAutoSeg CVarDecl{ &CVarDeclStorage() };
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int gzdoom_autoseg_count(int bucket)
+{
+	switch (bucket)
+	{
+	case 0: return static_cast<int>(ActionFunctionsStorage().size()); // areg
+	case 1: return static_cast<int>(TypeInfosStorage().size());       // creg
+	case 2: return static_cast<int>(ClassFieldsStorage().size());     // freg
+	case 3: return static_cast<int>(PropertiesStorage().size());      // greg
+	case 4: return static_cast<int>(MapInfoOptionsStorage().size());  // yreg
+	case 5: return static_cast<int>(CVarDeclStorage().size());        // vreg
+	default: return -1;
+	}
+}
+
+#elif defined _WIN32
 #include <windows.h>
 #include <dbghelp.h>
 #elif defined __MACH__
@@ -54,7 +127,11 @@
 #endif
 
 
-#if defined _WIN32 || defined __MACH__
+#if defined(__EMSCRIPTEN__)
+
+#define AUTOSEG_VARIABLE(name, autoseg)
+
+#elif defined _WIN32 || defined __MACH__
 
 #define AUTOSEG_VARIABLE(name, autoseg) namespace AutoSegs{ FAutoSeg name{ AUTOSEG_STR(autoseg) }; }
 
@@ -84,7 +161,9 @@ AUTOSEG_VARIABLE(CVarDecl, AUTOSEG_VREG)
 
 void FAutoSeg::Initialize()
 {
-#ifdef _WIN32
+#if defined(__EMSCRIPTEN__)
+	assert(false);
+#elif defined(_WIN32)
 
 	const HMODULE selfModule = GetModuleHandle(nullptr);
 	const SIZE_T baseAddress = reinterpret_cast<SIZE_T>(selfModule);

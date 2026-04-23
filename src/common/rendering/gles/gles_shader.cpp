@@ -402,8 +402,28 @@ bool FShader::Load(const char * name, const char * vert_prog_lump_, const char *
 	vp_comb.Format("#version %s\n\n#define NO_CLIPDISTANCE_SUPPORT\n", gles.shaderVersionString);
 
 	FString fp_comb = vp_comb;
+	const bool isGlsl300Plus = gles.shaderVersionString != nullptr &&
+		(gles.shaderVersionString[0] == '3' || gles.shaderVersionString[0] == '4');
+	if (isGlsl300Plus)
+	{
+		vp_comb << "#define attribute in\n";
+		vp_comb << "#define varying out\n";
+		vp_comb << "#define texture2D texture\n";
+		vp_comb << "#define textureCube texture\n";
+
+		fp_comb << "#define attribute in\n";
+		fp_comb << "#define varying in\n";
+		fp_comb << "#define texture2D texture\n";
+		fp_comb << "#define textureCube texture\n";
+	}
 	vp_comb << defines << i_data.GetChars();
 	fp_comb << "$placeholder$\n" << defines << i_data.GetChars();
+	if (isGlsl300Plus)
+	{
+		// Precision qualifiers must appear before float declarations in ES shaders.
+		fp_comb << "out vec4 FragColor;\n";
+		fp_comb << "#define gl_FragColor FragColor\n";
+	}
 
 	vp_comb << "#line 1\n";
 	fp_comb << "#line 1\n";
