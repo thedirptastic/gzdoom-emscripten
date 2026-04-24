@@ -41,9 +41,10 @@ if( EMSCRIPTEN )
 		)
 	endif()
 	set(EMSCRIPTEN_INITIAL_MEMORY "268435456" CACHE STRING "Initial WebAssembly memory in bytes.")
-	add_compile_options("SHELL:-sUSE_SDL=2")
+	add_compile_options("SHELL:-sUSE_SDL=2" "-fexceptions")
 	add_link_options(
 		"SHELL:-sUSE_SDL=2"
+		"-fexceptions"
 		"SHELL:-sINITIAL_MEMORY=${EMSCRIPTEN_INITIAL_MEMORY}"
 		"SHELL:-sALLOW_MEMORY_GROWTH=1"
 		"SHELL:-sABORTING_MALLOC=0"
@@ -433,6 +434,9 @@ install(DIRECTORY docs/
 		COMPONENT "Documentation")
 
 option( DYN_OPENAL "Dynamically load OpenAL" ON )
+if ( EMSCRIPTEN )
+	set( DYN_OPENAL OFF )
+endif()
 option( GZDOOM_HOST_TOOLS_ONLY "Build only host-side helper tools (lemon/re2c/zipdir)." OFF )
 
 if( GZDOOM_HOST_TOOLS_ONLY )

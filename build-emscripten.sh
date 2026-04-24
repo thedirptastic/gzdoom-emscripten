@@ -20,6 +20,7 @@ ZMUSIC_BUILD_DIR="${ZMUSIC_BUILD_DIR:-${ZMUSIC_DIR}/build-emscripten}"
 ZMUSIC_LIB="${ZMUSIC_LIB:-${ZMUSIC_BUILD_DIR}/source/libzmusic.a}"
 ZMUSIC_INCLUDE_DIR="${ZMUSIC_INCLUDE_DIR:-${ZMUSIC_DIR}/include}"
 
+# Override if you want a different cache location.
 : "${EM_CACHE:=/tmp/emscripten-cache}"
 mkdir -p "${EM_CACHE}"
 export EM_CACHE
@@ -67,7 +68,7 @@ CMAKE_ARGS=(
   -B "${WASM_BUILD_DIR}"
   -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
   -DNO_FMOD=ON
-  -DNO_OPENAL=ON
+  -DNO_OPENAL=OFF
   -DNO_STRIP=ON
   -DHAVE_VULKAN=OFF
   -DENABLE_VPX_CUTSCENES=OFF

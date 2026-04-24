@@ -253,12 +253,14 @@ void S_CreateStream()
 	// always create a floating point streaming buffer so we can apply replay gain without risk of integer overflows.
 	mus_playing.isfloat = fmt.mNumChannels > 0;
 	if (!mus_playing.isfloat) fmt.mBufferSize *= 2;
+	Printf("S_CreateStream: bufsize=%d channels=%d rate=%d\n", fmt.mBufferSize, fmt.mNumChannels, fmt.mSampleRate);
 	if (fmt.mBufferSize > 0) // if buffer size is 0 the library will play the song itself (e.g. Windows system synth.)
 	{
 		int flags = SoundStream::Float;
 		if (abs(fmt.mNumChannels) < 2) flags |= SoundStream::Mono;
 
 		musicStream.reset(GSnd->CreateStream(FillStream, fmt.mBufferSize, flags, fmt.mSampleRate, nullptr));
+		Printf("S_CreateStream: stream created: %s\n", musicStream ? "yes" : "no");
 		if (musicStream) musicStream->Play(true, 1);
 	}
 }

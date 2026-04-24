@@ -21,6 +21,20 @@
 #include "alc.h"
 #endif
 
+// Emscripten's al.h/alc.h are very bare-bones and miss these.
+#ifndef AL_APIENTRY
+#define AL_APIENTRY
+#endif
+#ifndef AL_API
+#define AL_API
+#endif
+#ifndef ALC_APIENTRY
+#define ALC_APIENTRY
+#endif
+#ifndef ALC_API
+#define ALC_API
+#endif
+
 #include "thirdparty/alext.h"
 
 

@@ -68,7 +68,7 @@ cat > "${BUILD_DIR}/index.html" <<'HTML'
       <label class="field-label" for="mod-files">Mods:</label>
       <input id="mod-files" type="file" accept=".pk3,.PK3,.wad,.WAD,.zip,.ZIP,application/octet-stream" multiple />
       <label class="field-label" for="launch-cmd">Launch:</label>
-      <input id="launch-cmd" type="text" value="-width 1280 -height 720 +snd_mididevice -2" />
+      <input id="launch-cmd" type="text" value="-width 1280 -height 720 " />
       <button id="start-btn" disabled>Start</button>
       <span id="iwad-status">Pick a WAD file to start.</span>
     </div>
@@ -91,13 +91,16 @@ cat > "${BUILD_DIR}/index.html" <<'HTML'
         .replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-Z\\-_]|\][^\x07]*(?:\x07|\x1b\\))/g, "")
         .replace(/\x1b[78]/g, "")
         .replace(/\x07/g, "");
-      const trimmed = line.trim();
+      
+      // Strip progress bar pattern: [=====...]
+      const filtered = line.replace(/\[[=.\s%\d/]*\]/g, "");
+      const trimmed = filtered.trim();
       if (!trimmed) return;
-      if (/^\[[=.]+\]$/.test(trimmed)) return;
+
       if (trimmed.includes("emscripten_set_main_loop_timing: Cannot set timing mode for main loop since a main loop does not exist!")) return;
-      logEl.textContent += line + "\n";
+      logEl.textContent += trimmed + "\n";
       logEl.scrollTop = logEl.scrollHeight;
-      console.log(line);
+      console.log(trimmed);
     };
     const setIwadStatus = (msg) => { iwadStatus.textContent = msg; appendLog(msg); };
     const IWAD_MOUNT_PATH = "/iwads/uploaded.wad";
@@ -212,7 +215,7 @@ cat > "${BUILD_DIR}/index.html" <<'HTML'
 
       ENV.HOME = PERSIST_ROOT;    // Saves and config go to IndexedDB (/home/web_user)
       ENV.DOOMWADDIR = "/";       // Engine looks for .pk3 files in the root
-      
+
       FS.mkdirTree(PERSIST_ROOT + "/.config");
       FS.mkdirTree(PERSIST_ROOT + "/.local");
       FS.mkdirTree(PERSIST_ROOT + "/.local/share");

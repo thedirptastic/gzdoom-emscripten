@@ -38,6 +38,12 @@
 #include "c_cvars.h"
 
 #include "oalsound.h"
+
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#define HAVE_SOUND_THREADS 0
+#else
+#define HAVE_SOUND_THREADS 1
+#endif
 #include "c_dispatch.h"
 #include "v_text.h"
 #include "i_module.h"
@@ -132,6 +138,8 @@ static ALenum checkALError(const char *fn, unsigned int ln)
 }
 #define getALError() checkALError(__FILE__, __LINE__)
 
+static ALenum getALErrorNoPrint() { return alGetError(); }
+
 static ALCenum checkALCError(ALCdevice *device, const char *fn, unsigned int ln)
 {
 	ALCenum err = alcGetError(device);
@@ -184,6 +192,8 @@ class OpenALSoundStream : public SoundStream
 	ALfloat Volume;
 	uint64_t Offset = 0;
 	std::mutex Mutex;
+	bool NeedsFloatConversion = false;
+	TArray<ALshort> ConvertBuf;
 
 	bool SetupSource()
 	{
@@ -223,7 +233,10 @@ class OpenALSoundStream : public SoundStream
 			alSourcei(Source, AL_SOURCE_SPATIALIZE_SOFT, AL_AUTO_SOFT);
 
 		alGenBuffers(BufferCount, Buffers);
-		return (getALError() == AL_NO_ERROR);
+		// Clear any errors from unsupported extension enums above,
+		// then check only the buffer generation result.
+		getALErrorNoPrint();
+		return (Buffers[0] != 0);
 	}
 
 public:
@@ -275,7 +288,24 @@ public:
 				break;
 			}
 
-			alBufferData(Buffers[i], Format, &Data[0], Data.Size(), SampleRate);
+			if(NeedsFloatConversion)
+			{
+				int nsamples = Data.Size() / sizeof(float);
+				ConvertBuf.Resize(nsamples);
+				const float *src = (const float*)&Data[0];
+				for(int s = 0; s < nsamples; s++)
+				{
+					float v = src[s];
+					if(v > 1.0f) v = 1.0f;
+					if(v < -1.0f) v = -1.0f;
+					ConvertBuf[s] = (ALshort)(v * 32767.0f);
+				}
+				alBufferData(Buffers[i], Format, &ConvertBuf[0], nsamples * sizeof(ALshort), SampleRate);
+			}
+			else
+			{
+				alBufferData(Buffers[i], Format, &Data[0], Data.Size(), SampleRate);
+			}
 			alSourceQueueBuffers(Source, 1, &Buffers[i]);
 		}
 		if(getALError() != AL_NO_ERROR)
@@ -352,7 +382,9 @@ public:
 			// Without AL_SOFT_source_latency, we can only get the sample offset, no
 			// latency info.
 			ALint ioffset{};
-			alGetSourcei(Source, AL_SAMPLE_OFFSET, &ioffset);
+			float foffset;
+			alGetSourcef(Source, AL_SAMPLE_OFFSET, &foffset);
+			ioffset = (ALint)foffset;
 			offset[0] = ioffset;
 			offset[1] = 0;
 		}
@@ -379,7 +411,9 @@ public:
 
 		std::unique_lock<std::mutex> lock(Renderer->StreamLock);
 		alGetSourcef(Source, AL_GAIN, &volume);
-		alGetSourcei(Source, AL_SAMPLE_OFFSET, &offset);
+		float foffset;
+		alGetSourcef(Source, AL_SAMPLE_OFFSET, &foffset);
+		offset = (ALint)foffset;
 		alGetSourcei(Source, AL_BUFFERS_PROCESSED, &processed);
 		alGetSourcei(Source, AL_BUFFERS_QUEUED, &queued);
 		alGetSourcei(Source, AL_SOURCE_STATE, &state);
@@ -436,7 +470,25 @@ public:
 
 			if(Callback(this, &Data[0], Data.Size(), UserData))
 			{
-				alBufferData(bufid, Format, &Data[0], Data.Size(), SampleRate);
+				if(NeedsFloatConversion)
+				{
+					// Convert float samples to int16
+					int nsamples = Data.Size() / sizeof(float);
+					ConvertBuf.Resize(nsamples);
+					const float *src = (const float*)&Data[0];
+					for(int s = 0; s < nsamples; s++)
+					{
+						float v = src[s];
+						if(v > 1.0f) v = 1.0f;
+						if(v < -1.0f) v = -1.0f;
+						ConvertBuf[s] = (ALshort)(v * 32767.0f);
+					}
+					alBufferData(bufid, Format, &ConvertBuf[0], nsamples * sizeof(ALshort), SampleRate);
+				}
+				else
+				{
+					alBufferData(bufid, Format, &Data[0], Data.Size(), SampleRate);
+				}
 				alSourceQueueBuffers(Source, 1, &bufid);
 			}
 		}
@@ -482,6 +534,13 @@ public:
 			{
 				if((flags&Mono)) Format = AL_FORMAT_MONO_FLOAT32;
 				else Format = AL_FORMAT_STEREO_FLOAT32;
+			}
+			else
+			{
+				// Float not supported, fall back to 16-bit and convert in Process
+				NeedsFloatConversion = true;
+				if((flags&Mono)) Format = AL_FORMAT_MONO16;
+				else Format = AL_FORMAT_STEREO16;
 			}
 		}
 		else if((flags&Bits32))
@@ -731,6 +790,8 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 	// meaningful values for ALC_MONO_SOURCES and ALC_MONO_SOURCES.
 	// At least Apple's OpenAL implementation returns zeroes,
 	// although it can generate reasonable number of sources.
+	if (numMono < 0) numMono = 0;
+	if (numStereo < 0) numStereo = 0;
 
 	const int numChannels = max<int>(snd_channels, 2);
 	int numSources = numMono + numStereo;
@@ -740,7 +801,7 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 		numSources = numChannels;
 	}
 
-	Sources.Resize(min<int>(numChannels, numSources));
+	Sources.Resize(max(0, min<int>(numChannels, numSources)));
 	for(unsigned i = 0;i < Sources.Size();i++)
 	{
 		alGenSources(1, &Sources[i]);
@@ -879,6 +940,7 @@ OpenALSoundRenderer::~OpenALSoundRenderer()
 	if(!Device)
 		return;
 
+#if HAVE_SOUND_THREADS
 	if(StreamThread.joinable())
 	{
 		std::unique_lock<std::mutex> lock(StreamLock);
@@ -887,6 +949,7 @@ OpenALSoundRenderer::~OpenALSoundRenderer()
 		StreamWake.notify_all();
 		StreamThread.join();
 	}
+#endif
 
 	while(Streams.Size() > 0)
 		delete Streams[0];
@@ -924,6 +987,7 @@ OpenALSoundRenderer::~OpenALSoundRenderer()
 
 void OpenALSoundRenderer::BackgroundProc()
 {
+#if HAVE_SOUND_THREADS
 	std::unique_lock<std::mutex> lock(StreamLock);
 	while(!QuitThread.load())
 	{
@@ -940,6 +1004,7 @@ void OpenALSoundRenderer::BackgroundProc()
 			StreamWake.wait_for(lock, std::chrono::milliseconds(100));
 		}
 	}
+#endif
 }
 
 void OpenALSoundRenderer::AddStream(OpenALSoundStream *stream)
@@ -1003,7 +1068,11 @@ unsigned int OpenALSoundRenderer::GetMSLength(SoundHandle sfx)
 			alGetBufferi(buffer, AL_CHANNELS, &channels);
 			alGetBufferi(buffer, AL_FREQUENCY, &freq);
 			alGetBufferi(buffer, AL_SIZE, &size);
+#ifdef __EMSCRIPTEN__
+			getALErrorNoPrint();
+#else
 			if(getALError() == AL_NO_ERROR)
+#endif
 				return (unsigned int)(size / (channels*bits/8) * 1000. / freq);
 		}
 	}
@@ -1225,8 +1294,10 @@ void OpenALSoundRenderer::UnloadSound(SoundHandle sfx)
 
 SoundStream *OpenALSoundRenderer::CreateStream(SoundStreamCallback callback, int buffbytes, int flags, int samplerate, void *userdata)
 {
+#if HAVE_SOUND_THREADS
 	if(StreamThread.get_id() == std::thread::id())
 		StreamThread = std::thread(std::mem_fn(&OpenALSoundRenderer::BackgroundProc), this);
+#endif
 	OpenALSoundStream *stream = new OpenALSoundStream(this);
 	if (!stream->Init(callback, buffbytes, flags, samplerate, userdata))
 	{
@@ -1565,7 +1636,9 @@ unsigned int OpenALSoundRenderer::GetPosition(FISoundChannel *chan)
 		return 0;
 
 	ALint pos;
-	alGetSourcei(GET_PTRID(chan->SysChannel), AL_SAMPLE_OFFSET, &pos);
+	float fpos;
+	alGetSourcef(GET_PTRID(chan->SysChannel), AL_SAMPLE_OFFSET, &fpos);
+	pos = (ALint)fpos;
 	if(getALError() == AL_NO_ERROR)
 		return pos;
 	return 0;
@@ -1686,9 +1759,16 @@ void OpenALSoundRenderer::UpdateSoundParams3D(SoundListener *listener, FISoundCh
 		}
 
 		alSourcei(source, AL_SOURCE_RELATIVE, AL_FALSE);
-		alSource3f(source, AL_POSITION, pos[0], pos[1], -pos[2]);
+		// Guard against NaN/Inf from degenerate positions
+		float px = std::isfinite(pos[0]) ? pos[0] : 0.f;
+		float py = std::isfinite(pos[1]) ? pos[1] : 0.f;
+		float pz = std::isfinite(pos[2]) ? pos[2] : 0.f;
+		alSource3f(source, AL_POSITION, px, py, -pz);
 	}
-	alSource3f(source, AL_VELOCITY, vel[0], vel[1], -vel[2]);
+	float vx = std::isfinite(vel[0]) ? vel[0] : 0.f;
+	float vy = std::isfinite(vel[1]) ? vel[1] : 0.f;
+	float vz = std::isfinite(vel[2]) ? vel[2] : 0.f;
+	alSource3f(source, AL_VELOCITY, vx, vy, -vz);
 	getALError();
 }
 
@@ -1711,12 +1791,18 @@ void OpenALSoundRenderer::UpdateListener(SoundListener *listener)
 	orient[5] = 0.f;
 
 	alListenerfv(AL_ORIENTATION, orient);
-	alListener3f(AL_POSITION, listener->position.X,
-	                          listener->position.Y,
-	                         -listener->position.Z);
-	alListener3f(AL_VELOCITY, listener->velocity.X,
-	                          listener->velocity.Y,
-	                         -listener->velocity.Z);
+	{
+		float lx = std::isfinite(listener->position.X) ? listener->position.X : 0.f;
+		float ly = std::isfinite(listener->position.Y) ? listener->position.Y : 0.f;
+		float lz = std::isfinite(listener->position.Z) ? listener->position.Z : 0.f;
+		alListener3f(AL_POSITION, lx, ly, -lz);
+	}
+	{
+		float lvx = std::isfinite(listener->velocity.X) ? listener->velocity.X : 0.f;
+		float lvy = std::isfinite(listener->velocity.Y) ? listener->velocity.Y : 0.f;
+		float lvz = std::isfinite(listener->velocity.Z) ? listener->velocity.Z : 0.f;
+		alListener3f(AL_VELOCITY, lvx, lvy, -lvz);
+	}
 	getALError();
 
 	const ReverbContainer *env = ForcedEnvironment;
@@ -1836,6 +1922,16 @@ void OpenALSoundRenderer::UpdateSounds()
 	}
 
 	PurgeStoppedSources();
+
+#if !HAVE_SOUND_THREADS
+	for (size_t i = 0; i < Streams.Size(); i++)
+		Streams[i]->Process();
+#endif
+
+#ifdef __EMSCRIPTEN__
+	static int count = 0;
+	if (++count % 500 == 0) Printf("Audio heartbeat (streams: %u)\n", (unsigned)Streams.Size());
+#endif
 }
 
 bool OpenALSoundRenderer::IsValid()
